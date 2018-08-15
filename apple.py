@@ -2,15 +2,46 @@ import numpy as np
 import cv2
 import queue
 import csv
+
+class KalmanFilter:
+    #Skeleton Class for Kalman Filter
+    #All members must be numpy matrices
+    def __init__(self,x,P,A,B,C,Q,R):
+        self.x = x  #Current State of the system
+        self.P = P  #Current uncertainty of the system
+        self.A = A  #Transition Matrix for state
+        self.B = B  #Transition Matrix for perterbation on system
+        self.Q = Q  #Covariance matrix for process Noise
+        self.R = R  #Covariance Matrix for sensor noise
+        self.C = C  #Transition Matrix for Sensor data
+    def measurementUpdate(self,y):
+        K = self.P*np.transpose(self.C)*np.linalg.inv(self.C*self.P*np.transpose(self.C)+self.R)
+        I = np.identidy(np.shape(self.P)[1])
+        self.x = x + K*(y-self.C*x)
+        self.P = (I - K*self.C)*self.P*np.transpose(I-K*self.C)*K*self.R*np.transpose(K)
+    def timeUpdate(self,u):
+        self.x = self.A*self.x+self.B*u
+        self.P = self.A*self.P*np.transpose(self.A)+self.Q
 class Apple:
     #Handles information regarding state of detected apples in system including updating position, and modeling motion
     #Will use Kalman filter model
-    def __init__(self, position,confidence, prior = [0.0,0.0]):
-        # Position refers to the x,y position of the apple in the current active image
+
+
+    #Define initialization of Kalman filter
+    #TODO: Figure out how these should actually be parameterized
+    stateTransition = np.matrix([[1,0,0,0],[0,1,0,0,],[0,0,1,0],[0,0,0,1]],dtype= np.float32)
+    perterbationTransition = np.matrix([[1,0,0,0],[0,1,0,0,],[0,0,1,0],[0,0,0,1]],dtype= np.float32)
+    observationMatrix = np.matrix([[1,0,0,0],[0,1,0,0,],[0,0,1,0],[0,0,0,1]],dtype= np.float32)
+    processNoiseCov = np.matrix([[1,0,0,0],[0,1,0,0,],[0,0,1,0],[0,0,0,1]],dtype= np.float32)
+    sensorNoiseCov = np.matrix([[1,0,0,0],[0,1,0,0,],[0,0,1,0],[0,0,0,1]],dtype= np.float32)
+
+    def __init__(self, position,confidence,velocityPrior = [0,0],time):
+        # Position refers to the x,y position of the apple in the current active image in form [xmin,ymin,xmax,ymax]
         self.position = position
-        # These members define the current motion model of the apple as x,y vectors.  Unit of velocity is pixel/frame
-        #TODO: Implement and test motion model
-        self.velocity = prior
+        kalmanX = np.matrix([(postion[0] + position)[2]/2),(postion[1] + position[3])/2),velocityPrior[0],velocityPrior[1]],dtype = np.float32)
+        initialUncertainty = np.matrix([0,0,0,0],dtype = np.float32) #TODO: Figure out what this value shoudl be -- I think it needs to be 4x4
+        self.kalmanFilter = KalmanFilter(x= kalmanX,P = initialUncertainty,A=stateTransition,
+            B=perterbationTransition,C=observationMatrix,Q=processNoiseCov,R=sensorNoiseCov)
         # Size defines the largest detected size of the currently detected apple in terms of major and minor axes (mm)
         self.size = self.estimateSize(position)
         # Value varying from 0-1; output from object detector
@@ -19,14 +50,18 @@ class Apple:
         self.inImage = 1
         #track the number of times
         self.numDetections = 1
-
+        self.uncertaintyCov = []
+        self.Q = []
+        self.time = time
     def estimateSize():
         #TODO: Implement size estimation
         return 0
-    def translate():
-        position += velocity
-    def sensorInput():
-        pass
+    def flowInput(self,data):
+        self.kalmanFilter.measurementUpdate(data)
+        translation =  [self.kalmanFilter.x[0],self.kalmanFilter.x[1]] - self.getCentroid()
+        self.position = [self.position[0]+translation[0],self.position[1]+translation[1],self.position[2]+translation[0],self.position[3]+translation[1]]
+    def getCentroid(self):
+        centroid = [(self.postion[0] + self.position)[2]/2),(self.postion[1] + self.position[3])/2]
 
 from abc import ABC, abstractmethod
 class Video(ABC):
