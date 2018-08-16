@@ -27,42 +27,48 @@ class Apple:
     #Will use Kalman filter model
 
 
-    #Define initialization of Kalman filter
-    #TODO: Figure out how these should actually be parameterized
-    stateTransition = np.matrix([[1,0,0,0],[0,1,0,0,],[0,0,1,0],[0,0,0,1]],dtype= np.float32)
-    perterbationTransition = np.matrix([[1,0,0,0],[0,1,0,0,],[0,0,1,0],[0,0,0,1]],dtype= np.float32)
-    observationMatrix = np.matrix([[1,0,0,0],[0,1,0,0,],[0,0,1,0],[0,0,0,1]],dtype= np.float32)
-    processNoiseCov = np.matrix([[1,0,0,0],[0,1,0,0,],[0,0,1,0],[0,0,0,1]],dtype= np.float32)
-    sensorNoiseCov = np.matrix([[1,0,0,0],[0,1,0,0,],[0,0,1,0],[0,0,0,1]],dtype= np.float32)
 
-    def __init__(self, position,confidence,velocityPrior = [0,0],time):
+
+    def __init__(self, position,confidence,size=0,velocityPrior = [0,0],time = 0):
+        #Define initialization parameters of Kalman filter
+        #TODO: Figure out how these should actually be parameterized
+        #TODO: Move these to a config file
+        stateTransition = np.matrix([[1,0,1,0],[0,1,0,1,],[0,0,1,0],[0,0,0,1]],dtype= np.float32)
+        perterbationTransition = np.matrix([[1,0,0,0],[0,1,0,0,],[0,0,1,0],[0,0,0,1]],dtype= np.float32)
+        observationMatrix = np.matrix([[1,0,0,0],[0,1,0,0,],[0,0,1,0],[0,0,0,1]],dtype= np.float32)
+        processNoiseCov = np.matrix([[1,0,0,0],[0,1,0,0,],[0,0,1,0],[0,0,0,1]],dtype= np.float32)
+        sensorNoiseCov = np.matrix([[1,0,0,0],[0,1,0,0,],[0,0,1,0],[0,0,0,1]],dtype= np.float32)
         # Position refers to the x,y position of the apple in the current active image in form [xmin,ymin,xmax,ymax]
         self.position = position
-        kalmanX = np.matrix([(postion[0] + position)[2]/2),(postion[1] + position[3])/2),velocityPrior[0],velocityPrior[1]],dtype = np.float32)
+        kalmanX = np.matrix([(position[0] + position[2])/2,(position[1] + position[3])/2,velocityPrior[0],velocityPrior[1]],
+            dtype = np.float32)
         initialUncertainty = np.matrix([0,0,0,0],dtype = np.float32) #TODO: Figure out what this value shoudl be -- I think it needs to be 4x4
         self.kalmanFilter = KalmanFilter(x= kalmanX,P = initialUncertainty,A=stateTransition,
             B=perterbationTransition,C=observationMatrix,Q=processNoiseCov,R=sensorNoiseCov)
         # Size defines the largest detected size of the currently detected apple in terms of major and minor axes (mm)
-        self.size = self.estimateSize(position)
+        self.size = size
         # Value varying from 0-1; output from object detector
         self.confidence = confidence
         #boolean value indicating whether the apple has left the edge of the images
         self.inImage = 1
-        #track the number of times
+        #track the number of times the apple has been detected
         self.numDetections = 1
-        self.uncertaintyCov = []
-        self.Q = []
         self.time = time
-    def estimateSize():
-        #TODO: Implement size estimation
+        self.tracklet = [self.getCentroid()]
+    def estimateSize(self):
+        #TODO: Implement size estimation; This should not be done in the Apple class; apples do not have direct access to image data
         return 0
     def flowInput(self,data):
         self.kalmanFilter.measurementUpdate(data)
         translation =  [self.kalmanFilter.x[0],self.kalmanFilter.x[1]] - self.getCentroid()
         self.position = [self.position[0]+translation[0],self.position[1]+translation[1],self.position[2]+translation[0],self.position[3]+translation[1]]
+        self.tracklet.append(self.getCentroid())
     def getCentroid(self):
-        centroid = [(self.postion[0] + self.position)[2]/2),(self.postion[1] + self.position[3])/2]
-
+        centroid = [(self.position[0] + self.position[2])/2,(self.position[1] + self.position[3])/2]
+    def tempTestFlow(self,flowVector):
+        translation =  flowVector
+        self.position = [self.position[0]+translation[0],self.position[1]+translation[1],self.position[2]+translation[0],self.position[3]+translation[1]]
+        self.tracklet.append(self.getCentroid())
 from abc import ABC, abstractmethod
 class Video(ABC):
     #Handler for processing of video frames
@@ -170,20 +176,20 @@ class FrameList(Video):
     def displayCurrentFrame(self, detections = None, trajectories = None,color = (0,255,0),linewidth = 4):
         #Helper function to display frameNew
         #Inputs: detections: list of apple bounding boxes in format [xmin,ymin,xmax,ymax]
-        #TODO: This needs to be modified to work nicely with however I decide to format data in apple class.
+        #Trajectory: list of positions of apple frame to be displayed. Formate: [[x1,y1],[x2,y2],...]
         frame = self.frameNew
         if detections is not None:
             for i in detections:
                 frame = cv2.rectangle(frame,(i[0],i[1]),(i[2],i[3]),color,thickness = linewidth)
         if trajectories is not None:
                 for i in trajectories:
+                    frame = cv2.circle(frame,i[0][0],5,i[1][2],3)
                     frame = cv2.line(frame,i[0],i[1],5,i[2],3)
-                    frame = cv2.circle(frame,i[0],5,i[2],3)
         cv2.imshow('frame',frame)
         cv2.waitKey(0)
         cv2.destroyAllWindows()
-class appleSet:
+class AppleSet:
     #Handler for a  partition of apple fruit counts.
-    def __init__(self,videoHandler):
+    def __init__(self,positionList):
         self.vid = videoHandler
         self.apples = []
